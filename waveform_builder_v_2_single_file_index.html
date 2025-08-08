@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Waveform Builder v2</title>
+<style>
+  :root {
+    --bg: #0f1221;
+    --panel: #171a2e;
+    --panel-2: #1f2240;
+    --ink: #e7e9ff;
+    --muted: #aeb4d8;
+    --accent: #6ea8ff;
+    --accent-2: #9c7bff;
+    --good: #2ecc71;
+    --warn: #ffcc00;
+    --bad: #ff6b6b;
+    --grid: #2a2e54;
+    --grid-2: #212447;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    background: var(--bg); color: var(--ink);
+  }
+  header {
+    padding: 16px 20px; background: linear-gradient(90deg, var(--panel), var(--panel-2));
+    border-bottom: 1px solid #2b2f55; position: sticky; top: 0; z-index: 20;
+  }
+  header h1 { margin: 0; font-size: 18px; letter-spacing: .3px; font-weight: 700; }
+  header .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+  .wrap { display: grid; grid-template-columns: 360px 1fr; gap: 16px; padding: 16px; }
+  @media (max-width: 1000px) { .wrap { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid #2b2f55; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+  .card h2 { font-size: 14px; margin: 0; padding: 12px 14px; border-bottom: 1px solid #2b2f55; color: #dfe3ff; letter-spacing: .2px; }
+  .card .body { padding: 12px; }
+  .row { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+  label { font-size: 12px; color: var(--muted); }
+  input[type="text"], input[type="number"], textarea, select {
+    background: var(--panel-2); color: var(--ink); border: 1px solid #303567; padding: 8px 10px; border-radius: 8px;
+    font-size: 13px; outline: none; width: 100%;
+  }
+  input[type="number"] { width: 100px; }
+  .btn { appearance: none; border: 1px solid #3951a8; background: linear-gradient(180deg, #2b3e92, #22357f); color: #fff; padding: 8px 12px; border-radius: 10px; cursor: pointer; font-weight: 600; font-size: 13px; }
+  .btn.secondary { border-color: #3a3e73; background: #252a52; }
+  .btn.ghost { background: transparent; border-color: #3a3e73; }
+  .btn.warn { border-color: #8a2a2a; background: #5a1f1f; }
+  .btn:disabled { opacity: .6; cursor: not-allowed; }
+
+  .signals { background: var(--panel); border-radius: 12px; border: 1px solid #2b2f55; overflow: hidden; }
+  .signals .toolbar { display: flex; align-items: center; gap: 8px; padding: 10px; border-bottom: 1px solid #2b2f55; }
+  .signals .toolbar .spacer { flex: 1; }
+  .signals .gridwrap { overflow: auto; max-height: 40vh; border-bottom: 1px solid #2b2f55; }
+  table.grid { border-collapse: collapse; width: 100%; min-width: 720px; }
+  table.grid th, table.grid td { border-bottom: 1px solid #2b2f55; }
+  table.grid th { position: sticky; top: 0; background: #1b1e39; z-index: 5; font-size: 11px; color: var(--muted); padding: 6px; }
+  table.grid td { padding: 0; font-size: 13px; }
+  .sig-name { white-space: nowrap; padding: 8px 10px; font-weight: 600; color: #e2e6ff; }
+  .sig-meta { font-size: 11px; color: var(--muted); }
+  .cell { width: 26px; height: 24px; display: grid; place-items: center; cursor: pointer; user-select: none; border-left: 1px solid var(--grid-2); }
+  .cell:nth-child(odd) { background: rgba(255,255,255,0.02); }
+  .cell[data-v="1"] { background-image: linear-gradient(180deg, rgba(110,168,255,.25), rgba(110,168,255,.05)); }
+  .cell[data-ovr="1"]::after { content: "★"; font-size: 9px; color: var(--warn); position: relative; top: -1px; left: 0; }
+  .cell:hover { outline: 1px dashed rgba(158, 155, 255, .6); }
+  .sig-actions { display: flex; align-items: center; gap: 8px; padding: 6px 10px; }
+  .badge { font-size: 10px; padding: 2px 6px; border-radius: 999px; background: #26306a; color: #cfe0ff; border: 1px solid #38448f; }
+
+  .svgwrap { background: var(--panel); border: 1px solid #2b2f55; border-radius: 12px; overflow: hidden; }
+  .svgwrap .toolbar { display: flex; align-items: center; padding: 10px; gap: 8px; border-bottom: 1px solid #2b2f55; }
+  .svgwrap .viewport { padding: 10px; overflow: auto; max-height: 55vh; }
+  .help { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .err { color: var(--bad); font-size: 12px; font-weight: 600; }
+  .ok { color: var(--good); font-size: 12px; font-weight: 700; }
+  .kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; background: #1e2348; border: 1px solid #343a76; border-bottom-width: 2px; padding: 0 4px; border-radius: 4px; font-size: 11px; color: #eaf1ff; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Waveform Builder v2</h1>
+    <div class="sub">Add clocks, define manual and logic signals, edit bits or properties, and export the SVG. Everything runs client‑side in one file.</div>
+  </header>
+
+  <div class="wrap">
+    <div class="card">
+      <h2>Signals & Settings</h2>
+      <div class="body">
+        <div class="row">
+          <label style="min-width:120px">Time steps</label>
+          <input type="number" id="steps" min="1" max="1024" value="32" />
+          <label>px/step</label>
+          <input type="number" id="pxstep" min="8" max="100" value="30" />
+        </div>
+        <div class="row">
+          <button class="btn" id="applyDims">Apply</button>
+          <span class="help">Resize preserves existing data within range.</span>
+        </div>
+
+        <hr style="border:0;border-top:1px solid #2b2f55;margin:12px 0"/>
+
+        <h3 style="margin:6px 0 4px;font-size:13px;color:#dfe3ff">Add clock</h3>
+        <div class="row">
+          <input type="text" id="clkName" placeholder="clk" value="clk"/>
+          <label>Period</label>
+          <input type="number" id="clkPeriod" value="4" min="2"/>
+          <button class="btn" id="addClock">Add</button>
+        </div>
+
+        <h3 style="margin:12px 0 4px;font-size:13px;color:#dfe3ff">Add manual signal</h3>
+        <div class="row">
+          <input type="text" id="manName" placeholder="A"/>
+          <button class="btn" id="addManual">Add</button>
+        </div>
+
+        <h3 style="margin:12px 0 4px;font-size:13px;color:#dfe3ff">Add logic signal</h3>
+        <div class="row">
+          <input type="text" id="logName" placeholder="B"/>
+        </div>
+        <div class="row">
+          <textarea id="logExpr" rows="3" placeholder="Example: A | B\nOps: ! & ^ |  •  Funcs: rising(X), falling(X), prev(X), delay(X,2)"></textarea>
+        </div>
+        <div class="row">
+          <button class="btn" id="addLogic">Add</button>
+          <span class="help">Names are case‑sensitive; constants 0/1 and any integer allowed (for delay k).</span>
+        </div>
+
+        <div class="row" style="margin-top:16px">
+          <button class="btn secondary" id="seedDemo">Seed demo</button>
+          <button class="btn ghost" id="clearAll">Clear all</button>
+        </div>
+
+        <div id="status" style="margin-top:8px"></div>
+      </div>
+    </div>
+
+    <div class="signals">
+      <div class="toolbar">
+        <strong>Signals</strong>
+        <span class="spacer"></span>
+        <span class="help">Click toggles. On logic/clock: click cycles override (set→toggle→clear). <span class="kbd">Right‑click</span> or <span class="kbd">Shift+Click</span> clears immediately.</span>
+      </div>
+      <div class="gridwrap">
+        <table class="grid" id="grid"></table>
+      </div>
+    </div>
+
+    <div class="svgwrap" style="grid-column: 1 / -1;">
+      <div class="toolbar">
+        <button class="btn" id="downloadSvg">Download SVG</button>
+        <button class="btn secondary" id="copySvg">Copy SVG to clipboard</button>
+        <span class="help">SVG updates live as you edit. Include it in docs or slide decks.</span>
+      </div>
+      <div class="viewport" id="svgViewport"></div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  // --- Data model ---
+  const model = {
+    steps: 32,
+    pxPerStep: 30,
+    signals: [], // {name, type: 'manual'|'clock'|'logic', period?, expr?, rpn?, data:[], overrides: Map<number,0|1>}
+  };
+  const FUNCTIONS = new Set(['rising','falling','prev','delay']);
+
+  function byName(name){ return model.signals.find(s => s.name === name); }
+  function ensureUniqueName(base){
+    if (!byName(base)) return base;
+    let i=2; while(byName(base+"_"+i)) i++; return base+"_"+i;
+  }
+  function resizeAll(newSteps){
+    model.steps = newSteps;
+    for(const s of model.signals){
+      const d = s.data || [];
+      if (d.length > newSteps) d.length = newSteps;
+      else if (d.length < newSteps) d.push(...Array(newSteps - d.length).fill(0));
+      // overrides map stays as is; out-of-range ignored by renderer
+    }
+  }
+
+  // Clock generator 50% duty
+  function computeClock(sig){
+    const p = Math.max(2, Number(sig.period||2));
+    const half = Math.floor(p/2);
+    sig.data = Array.from({length: model.steps}, (_,t)=> ((t % p) < half) ? 1 : 0);
+  }
+
+  // --- Expression parsing (Shunting-yard to RPN) ---
+  const PREC = { '!':3, '&':2, '^':2, '|':1 };
+  const RIGHT_ASSOC = new Set(['!']);
+
+  function tokenize(expr){
+    const tokens=[]; let i=0; const s=expr.trim();
+    const isIdent = c=> /[A-Za-z_]/.test(c);
+    const isIdentBody = c=> /[A-Za-z0-9_]/.test(c);
+    const isDigit = c=> /[0-9]/.test(c);
+    while(i<s.length){
+      const c = s[i];
+      if (c===' '||c==='\t' || c==='\n' || c==='\r'){ i++; continue; }
+      if (c==='('||c===')'||c===','||c==='!'||c==='&'||c==='|'||c==='^') { tokens.push(c); i++; continue; }
+      if (isDigit(c)) { let j=i+1; while(j<s.length && isDigit(s[j])) j++; tokens.push(s.slice(i,j)); i=j; continue; }
+      if (isIdent(c)){
+        let j=i+1; while(j<s.length && isIdentBody(s[j])) j++;
+        const word = s.slice(i,j);
+        tokens.push(word);
+        i=j; continue;
+      }
+      throw new Error('Unexpected character: '+c);
+    }
+    return tokens;
+  }
+
+  function toRPN(expr){
+    const out=[], op=[];
+    const tks = tokenize(expr);
+    for(let i=0;i<tks.length;i++){
+      const t=tks[i];
+      if (/^(?:\d+|true|false)$/i.test(t) || (/^[A-Za-z_][A-Za-z0-9_]*$/.test(t) && tks[i+1] !== '(')){
+        out.push(t);
+      } else if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(t) && tks[i+1] === '('){
+        // function name
+        op.push(t);
+      } else if (t === ','){
+        while(op.length && op[op.length-1] !== '('){ out.push(op.pop()); }
+      } else if (t === '('){
+        op.push(t);
+      } else if (t === ')'){
+        while(op.length && op[op.length-1] !== '('){ out.push(op.pop()); }
+        if (!op.length) throw new Error('Mismatched parentheses');
+        op.pop(); // pop '('
+        if (op.length && /^[A-Za-z_][A-Za-z0-9_]*$/.test(op[op.length-1])){
+          out.push(op.pop()); // function
+        }
+      } else if (t in PREC){
+        const p1=PREC[t];
+        while(op.length && (op[op.length-1] in PREC) && (RIGHT_ASSOC.has(t) ? p1 < PREC[op[op.length-1]] : p1 <= PREC[op[op.length-1]])){
+          out.push(op.pop());
+        }
+        op.push(t);
+      } else {
+        throw new Error('Unknown token '+t);
+      }
+    }
+    while(op.length){
+      const x=op.pop();
+      if (x==='('||x===')') throw new Error('Mismatched parentheses');
+      out.push(x);
+    }
+    return out; // array of tokens
+  }
+
+  // Evaluate RPN at time t
+  function makeEvaluator(rpn, getBit){
+    return function(t){
+      const st=[];
+      const val = (x)=> {
+        if (typeof x === 'string') return Number(getBit(String(x), t)) || 0;
+        return Number(x)||0;
+      };
+      for(let i=0;i<rpn.length;i++){
+        const tk = rpn[i];
+        if (/^\d+$/.test(tk)) { st.push(Number(tk)); }
+        else if (/^false$/i.test(tk)) { st.push(0); }
+        else if (/^true$/i.test(tk)) { st.push(1); }
+        else if (tk === '!') { const a=val(st.pop()); st.push(a?0:1); }
+        else if (tk === '&') { const b=val(st.pop()), a=val(st.pop()); st.push((a&&b)?1:0); }
+        else if (tk === '^') { const b=val(st.pop())?1:0, a=val(st.pop())?1:0; st.push((a^b)?1:0); }
+        else if (tk === '|') { const b=val(st.pop()), a=val(st.pop()); st.push((a||b)?1:0); }
+        else if (FUNCTIONS.has(tk)){
+          if (tk==='rising'){
+            const arg = st.pop();
+            const now = (typeof arg === 'string') ? getBit(String(arg), t) : (Number(arg)?1:0);
+            const prv = (typeof arg === 'string') ? getBit(String(arg), t-1) : (Number(arg)?1:0);
+            st.push(now===1 && prv===0 ? 1:0);
+          } else if (tk==='falling'){
+            const arg = st.pop();
+            const now = (typeof arg === 'string') ? getBit(String(arg), t) : (Number(arg)?1:0);
+            const prv = (typeof arg === 'string') ? getBit(String(arg), t-1) : (Number(arg)?1:0);
+            st.push(now===0 && prv===1 ? 1:0);
+          } else if (tk==='prev'){
+            const arg = st.pop();
+            const p = (typeof arg === 'string') ? getBit(String(arg), t-1) : (Number(arg)?1:0);
+            st.push(p?1:0);
+          } else if (tk==='delay'){
+            const kRaw = st.pop(); const arg = st.pop();
+            const k = Number(kRaw)||0;
+            if (typeof arg === 'string') st.push(getBit(String(arg), t-k)); else st.push(Number(arg)?1:0);
+          }
+        } else if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(tk)){
+          st.push(tk); // defer variable name until needed
+        } else {
+          st.push(0);
+        }
+      }
+      // Resolve any remaining names
+      for(let i=0;i<st.length;i++){
+        if (typeof st[i] === 'string') st[i] = Number(getBit(String(st[i]), t))||0;
+        st[i] = Number(st[i])||0;
+      }
+      return Number(st.pop()||0);
+    }
+  }
+
+  // Compute all logic signals safely with recursion guard
+  function recomputeAll(){
+    const visited = new Set();
+    const stack = new Set();
+    const cache = new Map(); // key `${name}:${t}` => val
+
+    const getBit = (name, t)=>{
+      if (t<0) return 0;
+      const sig = byName(name);
+      if (!sig) return 0;
+      // overrides always win
+      if (sig.overrides && sig.overrides.has(t)) return sig.overrides.get(t);
+      if (sig.type === 'manual' || sig.type === 'clock') return Number(sig.data?.[t]||0);
+      const key = name+":"+t;
+      if (cache.has(key)) return cache.get(key);
+      if (stack.has(key)) { throw new Error('Cycle detected involving '+name); }
+      stack.add(key);
+      const v = sig.eval ? Number(sig.eval(t)||0) : 0;
+      stack.delete(key);
+      cache.set(key, v);
+      return v;
+    };
+
+    // Recompute clocks
+    for(const s of model.signals){ if (s.type==='clock') computeClock(s); }
+
+    // Prepare evaluators for logic
+    let errorMsg = '';
+    for(const s of model.signals){
+      if (s.type==='logic'){
+        try {
+          s.rpn = toRPN(s.expr||'0');
+          s.eval = makeEvaluator(s.rpn, getBit);
+        } catch(e){ errorMsg = e.message; s.eval = ()=>0; }
+      }
+    }
+
+    // Fill data arrays
+    for(const s of model.signals){
+      if (!s.data) s.data = Array(model.steps).fill(0);
+      if (s.data.length !== model.steps){
+        if (s.data.length > model.steps) s.data.length = model.steps;
+        else s.data.push(...Array(model.steps - s.data.length).fill(0));
+      }
+    }
+
+    // Evaluate logic signals per time step
+    for (const s of model.signals){
+      if (s.type==='logic'){
+        try {
+          for(let t=0;t<model.steps;t++){
+            const v = getBit(s.name, t);
+            s.data[t] = v;
+          }
+        } catch(err){ errorMsg = String(err.message||err); s.data = Array(model.steps).fill(0); }
+      }
+    }
+
+    // Render + status
+    renderGrid();
+    renderSVG();
+    const st = document.getElementById('status');
+    if (errorMsg){ st.innerHTML = '<span class="err">'+escapeHtml(errorMsg)+'</span>'; }
+    else { st.innerHTML = '<span class="ok">OK</span>'; }
+  }
+
+  // --- Rendering: HTML grid ---
+  function renderGrid(){
+    const tbl = document.getElementById('grid');
+    const thead = document.createElement('thead');
+    const trh = document.createElement('tr');
+    const h1 = document.createElement('th'); h1.textContent = 'Signal'; trh.appendChild(h1);
+    const h2 = document.createElement('th'); h2.textContent = 'Type'; trh.appendChild(h2);
+    for(let t=0;t<model.steps;t++){ const th=document.createElement('th'); th.textContent = String(t); trh.appendChild(th); }
+    const h3 = document.createElement('th'); h3.textContent = 'Actions'; trh.appendChild(h3);
+    thead.appendChild(trh);
+
+    const tb = document.createElement('tbody');
+    for(const s of model.signals){
+      const tr = document.createElement('tr');
+      const nameTd = document.createElement('td'); nameTd.className='sig-name';
+      nameTd.textContent = s.name; tr.appendChild(nameTd);
+      const typeTd = document.createElement('td'); typeTd.className='sig-meta'; typeTd.innerHTML = '<span class="badge">'+s.type+'</span>';
+      tr.appendChild(typeTd);
+      for(let t=0;t<model.steps;t++){
+        const td = document.createElement('td');
+        const div = document.createElement('div'); div.className='cell';
+        const v = effectiveBit(s, t);
+        div.dataset.v = String(v);
+        if (s.overrides?.has(t)) div.dataset.ovr = '1'; else delete div.dataset.ovr;
+        div.textContent = v ? '1' : '0';
+        div.title = (s.type==='manual') ? 'Click toggles this bit' : 'Click cycles override (set→toggle→clear). Right-click or Shift+Click clears override';
+        div.addEventListener('click', (ev)=> onCellClick(s, t, ev));
+        div.addEventListener('contextmenu', (ev)=> { ev.preventDefault(); onCellContext(s, t); });
+        td.appendChild(div); tr.appendChild(td);
+      }
+      const act = document.createElement('td'); act.className='sig-actions';
+      const edit = document.createElement('button'); edit.className='btn'; edit.textContent='Edit'; edit.addEventListener('click', ()=>{ editSignal(s.name); }); act.appendChild(edit);
+      const del = document.createElement('button'); del.className='btn warn'; del.textContent='Delete'; del.addEventListener('click', ()=>{ removeSignal(s.name); });
+      act.appendChild(del);
+      if (s.type!=='manual'){
+        const clr = document.createElement('button'); clr.className='btn ghost'; clr.textContent='Clear overrides'; clr.addEventListener('click', ()=>{ s.overrides?.clear(); recomputeAll(); }); act.appendChild(clr);
+      }
+      tr.appendChild(act);
+      tb.appendChild(tr);
+    }
+
+    tbl.innerHTML = ''; tbl.appendChild(thead); tbl.appendChild(tb);
+  }
+
+  function onCellClick(s, t, ev){
+    if (s.type === 'manual'){
+      s.data[t] = s.data[t] ? 0 : 1;
+    } else {
+      if (!s.overrides) s.overrides = new Map();
+      if (ev.shiftKey){ s.overrides.delete(t); }
+      else if (s.overrides.has(t)){
+        const cur = s.overrides.get(t);
+        if (cur === 0) s.overrides.set(t, 1); else s.overrides.delete(t);
+      } else {
+        const base = effectiveBit(s, t);
+        s.overrides.set(t, base ? 0 : 1);
+      }
+    }
+    recomputeAll();
+  }
+
+  function onCellContext(s, t){
+    if (s.type !== 'manual'){
+      s.overrides?.delete(t);
+      recomputeAll();
+    }
+  }
+
+  function effectiveBit(s, t){
+    if (s.overrides?.has(t)) return Number(s.overrides.get(t));
+    return Number(s.data?.[t]||0);
+  }
+
+  function removeSignal(name){
+    const i = model.signals.findIndex(s=>s.name===name);
+    if (i>=0){ model.signals.splice(i,1); recomputeAll(); }
+  }
+
+  function renameSignalEverywhere(oldName, newName){
+    if (oldName === newName) return true;
+    const s = byName(oldName); if (!s) return false;
+    s.name = newName;
+    const re = new RegExp(`(^|[^A-Za-z0-9_])${oldName}([^A-Za-z0-9_]|$)`, 'g');
+    for(const x of model.signals){
+      if (x.type==='logic' && typeof x.expr === 'string'){
+        x.expr = x.expr.replace(re, (_, p1, p2)=> `${p1}${newName}${p2}`);
+      }
+    }
+    return true;
+  }
+
+  function editSignal(name){
+    const s = byName(name); if (!s) return;
+    let newName = prompt('Rename signal', s.name);
+    if (newName===null) newName = s.name; // cancel -> keep
+    newName = newName.trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(newName)) { alert('Invalid signal name'); return; }
+    if (newName !== s.name && byName(newName)) { alert('A signal with that name already exists'); return; }
+
+    if (s.type === 'clock'){
+      const p = prompt('Clock period (>=2)', String(s.period||2));
+      if (p!==null) s.period = Math.max(2, Number(p)||2);
+    } else if (s.type === 'logic'){
+      const e = prompt('Edit logic expression', String(s.expr||'0'));
+      if (e!==null) s.expr = e;
+    }
+
+    if (newName !== s.name) renameSignalEverywhere(s.name, newName);
+    recomputeAll();
+  }
+
+  // --- Rendering: SVG ---
+  function buildSVG(){
+    const LM=100, TM=20, RM=20, BM=20; // margins
+    const rowH = 30; const mid = 0.5; const H = TM + BM + model.signals.length*rowH;
+    const W = LM + RM + model.steps*model.pxPerStep;
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('xmlns', NS);
+    svg.setAttribute('width', String(W)); svg.setAttribute('height', String(H));
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    // Background
+    const bg = document.createElementNS(NS,'rect'); bg.setAttribute('x','0'); bg.setAttribute('y','0'); bg.setAttribute('width', String(W)); bg.setAttribute('height', String(H)); bg.setAttribute('fill', '#0c0f24');
+    svg.appendChild(bg);
+
+    // Grid vertical lines and labels
+    for(let t=0;t<=model.steps;t++){
+      const x = LM + t*model.pxPerStep;
+      const line = document.createElementNS(NS,'line');
+      line.setAttribute('x1', String(x)); line.setAttribute('x2', String(x));
+      line.setAttribute('y1', String(TM)); line.setAttribute('y2', String(H-BM));
+      line.setAttribute('stroke', t%4===0? '#2f356a' : '#232756'); line.setAttribute('stroke-width', t%4===0? '1.2' : '1');
+      svg.appendChild(line);
+      if (t%4===0){
+        const tx = document.createElementNS(NS,'text'); tx.setAttribute('x', String(x+2)); tx.setAttribute('y', String(TM-4)); tx.setAttribute('fill', '#bcd2ff'); tx.setAttribute('font-size','10'); tx.textContent = String(t);
+        svg.appendChild(tx);
+      }
+    }
+
+    // Signals
+    model.signals.forEach((s, idx)=>{
+      const yTop = TM + idx*rowH;
+      const yHigh = yTop + 8; const yLow = yTop + rowH - 8; const yMid = yTop + rowH*mid;
+      // Label
+      const tx = document.createElementNS(NS,'text'); tx.setAttribute('x', String(10)); tx.setAttribute('y', String(yMid+3)); tx.setAttribute('fill','#eaf1ff'); tx.setAttribute('font-size','12'); tx.setAttribute('font-family','monospace'); tx.textContent = s.name; svg.appendChild(tx);
+      // Path
+      const path = document.createElementNS(NS,'path');
+      let d='';
+      let cur = effectiveBit(s,0);
+      let x0 = LM; let y0 = cur?yHigh:yLow;
+      d += `M ${x0} ${y0}`;
+      for(let t=0;t<model.steps;t++){
+        const x1 = LM + (t+1)*model.pxPerStep;
+        const v = effectiveBit(s,t);
+        const y = v?yHigh:yLow;
+        // Draw horizontal segment
+        d += ` H ${x1}`;
+        // Edge to next value if it changes
+        const vNext = (t+1<model.steps)? effectiveBit(s,t+1) : v;
+        if (vNext !== v){
+          const yNext = vNext?yHigh:yLow; d += ` V ${yNext}`;
+        }
+      }
+      path.setAttribute('d', d);
+      path.setAttribute('fill','none'); path.setAttribute('stroke','#8ab4ff'); path.setAttribute('stroke-width','2');
+      svg.appendChild(path);
+
+      // Overrides markers
+      if (s.overrides && s.overrides.size){
+        for(const [t, val] of s.overrides){
+          if (t<0 || t>=model.steps) continue;
+          const x = LM + (t+0.5)*model.pxPerStep;
+          const y = val? yHigh-6 : yLow+10;
+          const star = document.createElementNS(NS,'text'); star.setAttribute('x', String(x-4)); star.setAttribute('y', String(y)); star.setAttribute('fill', '#ffd166'); star.setAttribute('font-size','10'); star.textContent = '★'; svg.appendChild(star);
+        }
+      }
+
+      // Row divider
+      const line = document.createElementNS(NS,'line');
+      line.setAttribute('x1', String(LM)); line.setAttribute('x2', String(W-RM));
+      line.setAttribute('y1', String(yTop + rowH)); line.setAttribute('y2', String(yTop + rowH));
+      line.setAttribute('stroke', '#1d2246'); line.setAttribute('stroke-width', '1');
+      svg.appendChild(line);
+    });
+
+    return svg;
+  }
+
+  function renderSVG(){
+    const wrap = document.getElementById('svgViewport');
+    wrap.innerHTML = '';
+    const svg = buildSVG();
+    wrap.appendChild(svg);
+  }
+
+  // --- UI hooks ---
+  document.getElementById('applyDims').addEventListener('click', ()=>{
+    const steps = clamp(1, 1024, Number(document.getElementById('steps').value||32));
+    const px = clamp(8, 100, Number(document.getElementById('pxstep').value||30));
+    resizeAll(steps); model.pxPerStep = px; recomputeAll();
+  });
+
+  document.getElementById('addClock').addEventListener('click', ()=>{
+    let name = (document.getElementById('clkName').value||'clk').trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) { alert('Invalid signal name'); return; }
+    name = ensureUniqueName(name);
+    const period = Math.max(2, Number(document.getElementById('clkPeriod').value||4));
+    model.signals.push({ name, type:'clock', period, data: Array(model.steps).fill(0), overrides: new Map() });
+    computeClock(byName(name));
+    recomputeAll();
+  });
+
+  document.getElementById('addManual').addEventListener('click', ()=>{
+    let name = (document.getElementById('manName').value||'A').trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) { alert('Invalid signal name'); return; }
+    name = ensureUniqueName(name);
+    model.signals.push({ name, type:'manual', data: Array(model.steps).fill(0) });
+    recomputeAll();
+  });
+
+  document.getElementById('addLogic').addEventListener('click', ()=>{
+    let name = (document.getElementById('logName').value||'B').trim();
+    const expr = (document.getElementById('logExpr').value||'0').trim();
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) { alert('Invalid signal name'); return; }
+    if (!expr) { alert('Expression required'); return; }
+    // Validate deps exist
+    const missing = depsFromExpr(expr).filter(d => !byName(d));
+    if (missing.length){
+      if (!confirm('These referenced signals do not exist yet: '+missing.join(', ')+'\nAdd anyway?')) return;
+    }
+    name = ensureUniqueName(name);
+    model.signals.push({ name, type:'logic', expr, data: Array(model.steps).fill(0), overrides: new Map() });
+    recomputeAll();
+  });
+
+  document.getElementById('seedDemo').addEventListener('click', ()=>{
+    model.signals = [];
+    model.steps = 32; document.getElementById('steps').value = 32;
+    model.pxPerStep = 30; document.getElementById('pxstep').value = 30;
+    // clk
+    model.signals.push({ name:'clk', type:'clock', period:4, data:[], overrides: new Map() });
+    computeClock(byName('clk'));
+    // A manual
+    const A = { name:'A', type:'manual', data: Array(model.steps).fill(0) };
+    A.data[4]=1; A.data[5]=1; A.data[6]=1; A.data[10]=1; A.data[11]=1; A.data[12]=1; A.data[20]=1; A.data[21]=1;
+    model.signals.push(A);
+    // B = A & clk
+    model.signals.push({ name:'B', type:'logic', expr:'A & clk', data: Array(model.steps).fill(0), overrides: new Map() });
+    // C = rising(A)
+    model.signals.push({ name:'C', type:'logic', expr:'rising(A)', data: Array(model.steps).fill(0), overrides: new Map() });
+    recomputeAll();
+  });
+
+  document.getElementById('clearAll').addEventListener('click', ()=>{
+    if (!confirm('Remove all signals?')) return; model.signals = []; recomputeAll();
+  });
+
+  // Download SVG
+  document.getElementById('downloadSvg').addEventListener('click', ()=>{
+    const svg = document.querySelector('#svgViewport svg'); if (!svg) return;
+    const ser = new XMLSerializer();
+    const src = '<?xml version="1.0" standalone="no"?>\n' + ser.serializeToString(svg);
+    const blob = new Blob([src], {type:'image/svg+xml;charset=utf-8'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'waveform.svg'; a.click();
+    setTimeout(()=> URL.revokeObjectURL(url), 5000);
+  });
+
+  // Copy SVG
+  document.getElementById('copySvg').addEventListener('click', async ()=>{
+    const svg = document.querySelector('#svgViewport svg'); if (!svg) return;
+    const ser = new XMLSerializer();
+    const src = ser.serializeToString(svg);
+    try {
+      await navigator.clipboard.writeText(src);
+      toast('SVG markup copied to clipboard');
+    } catch(e){ alert('Clipboard failed: '+e); }
+  });
+
+  // --- Utils ---
+  function clamp(min, max, v){ return isFinite(v) ? Math.max(min, Math.min(max, v)) : min; }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+  function toast(msg){ const d=document.createElement('div'); d.textContent=msg; Object.assign(d.style,{position:'fixed',bottom:'18px',left:'50%',transform:'translateX(-50%)',background:'#1f264e',border:'1px solid #3b4499',padding:'8px 12px',borderRadius:'10px',color:'#dfe6ff',fontSize:'13px',zIndex:1000}); document.body.appendChild(d); setTimeout(()=>d.remove(),1800); }
+  function depsFromExpr(expr){
+    const names = new Set();
+    for(const t of tokenize(expr)){
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(t) && !FUNCTIONS.has(t) && !/^(true|false)$/i.test(t)){
+        names.add(t);
+      }
+    }
+    return [...names];
+  }
+
+  // Kick off with a small demo
+  document.getElementById('seedDemo').click();
+})();
+</script>
+</body>
+</html>
